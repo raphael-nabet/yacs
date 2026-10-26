@@ -50,6 +50,9 @@
 #else
 #include <argp.h>
 #endif
+#if defined(__APPLE__)
+#include <getopt.h>
+#endif
 
 using YACS::YACSLoader;
 using namespace YACS::ENGINE;
@@ -339,9 +342,69 @@ void shutdownServers()
     }
 }
 
+#if defined(__APPLE__)
+// macOS: glibc argp is not available, parse the same options with getopt_long
+static void parse_args_getopt(int argc, char* argv[], struct arguments& myArgs)
+{
+  static struct option long_options[] =
+    {
+      {"display",         required_argument, nullptr, 'd'},
+      {"verbose",         no_argument,       nullptr, 'v'},
+      {"stop-on-error",   no_argument,       nullptr, 's'},
+      {"dump-on-error",   optional_argument, nullptr, 'e'},
+      {"dump-final",      optional_argument, nullptr, 'f'},
+      {"dump",            optional_argument, nullptr, 'g'},
+      {"load-state",      required_argument, nullptr, 'l'},
+      {"save-xml-schema", optional_argument, nullptr, 'x'},
+      {"shutdown",        required_argument, nullptr, 't'},
+      {"reset",           required_argument, nullptr, 'r'},
+      {"kill-port",       required_argument, nullptr, 'k'},
+      {"init_port",       optional_argument, nullptr, 'i'},
+      {"donotsqueeze",    required_argument, nullptr, 'z'},
+      {nullptr,           0,                 nullptr, 0}
+    };
+  int key;
+  while((key = getopt_long(argc, argv, "d:vse::f::g::l:x::t:r:k:i::z:", long_options, nullptr)) != -1)
+    {
+      char *arg(optarg);
+      switch (key)
+        {
+        case 'd': myArgs.display = atoi(arg); break;
+        case 't': myArgs.shutdown = atoi(arg); break;
+        case 'r': myArgs.reset = atoi(arg); break;
+        case 'v': myArgs.verbose = 1; break;
+        case 's': myArgs.stop = 1; break;
+        case 'e':
+          myArgs.stop = 1;
+          myArgs.dumpErrorFile = arg ? arg : "dumpErrorState.xml";
+          break;
+        case 'f': myArgs.finalDump = arg ? arg : "finalDumpState.xml"; break;
+        case 'g': myArgs.dump = arg ? atoi(arg) : 60; break;
+        case 'l': myArgs.loadState = arg; break;
+        case 'x': myArgs.xmlSchema = arg ? arg : "saveSchema.xml"; break;
+        case 'k': myArgs.killPort = atoi(arg); break;
+        case 'i': if (arg) myArgs.init_ports.push_back(std::string(arg)); break;
+        case 'z': myArgs.squeezeMemory = ! ( bool( atoi(arg) ) ); break;
+        default:
+          std::cerr << "Usage: " << argv[0] << " [OPTION...] " << args_doc << std::endl << doc << std::endl;
+          exit(64);
+        }
+    }
+  if (argc - optind != 1) // exactly one graph expected
+    {
+      std::cerr << "Usage: " << argv[0] << " [OPTION...] " << args_doc << std::endl << doc << std::endl;
+      exit(64);
+    }
+  myArgs.args[0] = argv[optind];
+}
+#endif
+
 int main (int argc, char* argv[])
 {
   // Parse our arguments; every option seen by parse_opt will be reflected in arguments.
+#if defined(__APPLE__)
+  parse_args_getopt(argc, argv, myArgs);
+#endif
 #if defined WIN32 || defined __APPLE__
 #else
   argp_parse (&argp, argc, argv, 0, 0, &myArgs);
